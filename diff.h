@@ -7,6 +7,7 @@
 #include "tree-walk.h"
 #include "pathspec.h"
 #include "object.h"
+#include "hashmap.h"
 
 struct rev_info;
 struct diff_options;
@@ -227,6 +228,10 @@ struct diff_options {
 
 	struct buffered_patch_line *line_buffer;
 	int line_buffer_nr, line_buffer_alloc;
+
+	int color_moved;
+	struct hashmap *deleted_lines;
+	struct hashmap *added_lines;
 };
 
 void diff_emit_line(struct diff_options *o, const char *set, const char *reset,
@@ -241,7 +246,11 @@ enum color_diff {
 	DIFF_FILE_NEW = 5,
 	DIFF_COMMIT = 6,
 	DIFF_WHITESPACE = 7,
-	DIFF_FUNCINFO = 8
+	DIFF_FUNCINFO = 8,
+	DIFF_FILE_OLD_MOVED = 9,
+	DIFF_FILE_OLD_MOVED_ALT = 10,
+	DIFF_FILE_NEW_MOVED = 11,
+	DIFF_FILE_NEW_MOVED_ALT = 12
 };
 const char *diff_get_color(int diff_use_color, enum color_diff ix);
 #define diff_get_color_opt(o, ix) \
