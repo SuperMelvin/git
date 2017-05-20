@@ -7,6 +7,7 @@
 #include "tree-walk.h"
 #include "pathspec.h"
 #include "object.h"
+#include "hashmap.h"
 
 struct rev_info;
 struct diff_options;
@@ -115,6 +116,41 @@ enum diff_submodule_format {
 	DIFF_SUBMODULE_INLINE_DIFF
 };
 
+/*
+ * This struct is used when we need to buffer the output of the diff output.
+ *
+ * NEEDSWORK: Instead of storing a copy of the line, add an offset pointer
+ * into the pre/post image file. This pointer could be a union with the
+ * line pointer. By storing an offset into the file instead of the literal line,
+ * we can decrease the memory footprint for the buffered output. At first we
+ * may want to only have indirection for the content lines, but we could
+ * also have an enum (based on sign?) that stores prefabricated lines, e.g.
+ * the similarity score line or hunk/file headers.
+ */
+struct buffered_patch_line {
+	const char *set;
+	const char *reset;
+	const char *line;
+	int len;
+	int sign;
+	int add_line_prefix;
+	enum {
+		/*
+		 * Emits [lineprefix][set][sign][reset] and then calls
+		 * ws_check_emit which will output "line", marked up
+		 * according to ws_rule.
+		 */
+		BPL_EMIT_LINE_WS,
+
+		/* Emits [lineprefix][set][sign] line [reset] */
+		BPL_EMIT_LINE_ASIS,
+
+		/* Reloads the ws_rule; line contains the file name */
+		BPL_HANDOVER
+	} state;
+};
+#define BUFFERED_PATCH_LINE_INIT {NULL, NULL, NULL, 0, 0, 0}
+
 struct diff_options {
 	const char *orderfile;
 	const char *pickaxe;
@@ -186,7 +222,20 @@ struct diff_options {
 	void *output_prefix_data;
 
 	int diff_path_counter;
+
+	unsigned ws_rule;
+	int use_buffer;
+
+	struct buffered_patch_line *line_buffer;
+	int line_buffer_nr, line_buffer_alloc;
+
+	int color_moved;
+	struct hashmap *deleted_lines;
+	struct hashmap *added_lines;
 };
+
+void diff_emit_line(struct diff_options *o, const char *set, const char *reset,
+		    const char *line, int len);
 
 enum color_diff {
 	DIFF_RESET = 0,
@@ -197,7 +246,11 @@ enum color_diff {
 	DIFF_FILE_NEW = 5,
 	DIFF_COMMIT = 6,
 	DIFF_WHITESPACE = 7,
-	DIFF_FUNCINFO = 8
+	DIFF_FUNCINFO = 8,
+	DIFF_FILE_OLD_MOVED = 9,
+	DIFF_FILE_OLD_MOVED_ALT = 10,
+	DIFF_FILE_NEW_MOVED = 11,
+	DIFF_FILE_NEW_MOVED_ALT = 12
 };
 const char *diff_get_color(int diff_use_color, enum color_diff ix);
 #define diff_get_color_opt(o, ix) \
@@ -396,8 +449,8 @@ extern int parse_rename_score(const char **cp_p);
 
 extern long parse_algorithm_value(const char *value);
 
-extern int print_stat_summary(FILE *fp, int files,
-			      int insertions, int deletions);
+extern void print_stat_summary(FILE *fp, int files,
+			       int insertions, int deletions);
 extern void setup_diff_pager(struct diff_options *);
 
 #endif /* DIFF_H */
